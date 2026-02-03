@@ -124,6 +124,7 @@ namespace GHelper
             checkStatusLed = new CheckBox();
             checkPerKeyRGB = new CheckBox();
             checkAspm = new CheckBox();
+            checkForceGpuModes = new CheckBox();
             panelPower = new Panel();
             numericHibernateAfter = new NumericUpDownWithUnit();
             labelHibernateAfter = new Label();
@@ -1196,6 +1197,7 @@ namespace GHelper
             panelSettings.AccessibleRole = AccessibleRole.Grouping;
             panelSettings.AutoSize = true;
             panelSettings.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            panelSettings.Controls.Add(checkForceGpuModes);
             panelSettings.Controls.Add(checkAutoToggleClamshellMode);
             panelSettings.Controls.Add(checkBWIcon);
             panelSettings.Controls.Add(checkTopmost);
@@ -1227,6 +1229,19 @@ namespace GHelper
             checkAutoToggleClamshellMode.TabIndex = 8;
             checkAutoToggleClamshellMode.Text = "Auto Toggle Clamshell Mode";
             checkAutoToggleClamshellMode.UseVisualStyleBackColor = true;
+            // 
+            // checkForceGpuModes
+            // 
+            checkForceGpuModes.AutoSize = true;
+            checkForceGpuModes.Dock = DockStyle.Top;
+            checkForceGpuModes.Location = new Point(21, 467);
+            checkForceGpuModes.Margin = new Padding(5, 3, 5, 3);
+            checkForceGpuModes.Name = "checkForceGpuModes";
+            checkForceGpuModes.Padding = new Padding(3);
+            checkForceGpuModes.Size = new Size(917, 42);
+            checkForceGpuModes.TabIndex = 12;
+            checkForceGpuModes.Text = "Force show GPU modes (experimental)";
+            checkForceGpuModes.UseVisualStyleBackColor = true;
             // 
             // checkBWIcon
             // 
@@ -1883,6 +1898,7 @@ namespace GHelper
         private CheckBox checkStatusLed;
         private CheckBox checkPerKeyRGB;
         private CheckBox checkAspm;
+        private CheckBox checkForceGpuModes;
         private CheckBox checkBatteryLogo;
         private CheckBox checkBattery;
         private CheckBox checkBatteryLid;
