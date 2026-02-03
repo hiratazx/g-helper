@@ -22,7 +22,9 @@ namespace GHelper.Gpu
 
         public void InitGPUMode()
         {
-            if (AppConfig.NoGpu())
+            bool forceGpuModes = AppConfig.Is("force_gpu_modes");
+
+            if (AppConfig.NoGpu() && !forceGpuModes)
             {
                 settings.HideGPUModes(false);
                 return;
@@ -34,7 +36,15 @@ namespace GHelper.Gpu
             Logger.WriteLine("Eco flag : " + eco);
             Logger.WriteLine("Mux flag : " + mux);
 
-            settings.VisualiseGPUButtons(eco >= 0, mux >= 0);
+            if (forceGpuModes)
+            {
+                // Force show all GPU mode buttons
+                settings.VisualiseGPUButtons(true, true);
+            }
+            else
+            {
+                settings.VisualiseGPUButtons(eco >= 0, mux >= 0);
+            }
 
             if (mux == 0)
             {
@@ -48,7 +58,7 @@ namespace GHelper.Gpu
                     gpuMode = AsusACPI.GPUModeStandard;
 
                 // GPU mode not supported
-                if (eco < 0 && mux < 0)
+                if (eco < 0 && mux < 0 && !forceGpuModes)
                 {
                     if (gpuExists is null) gpuExists = Program.acpi.GetFan(AsusFan.GPU) >= 0;
                     settings.HideGPUModes((bool)gpuExists);
