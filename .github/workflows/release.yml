@@ -7,8 +7,6 @@ on:
 
 permissions:
   contents: write
-  id-token: write
-  attestations: write
 
 jobs:
   release:
@@ -24,34 +22,11 @@ jobs:
       run: |
         dotnet publish app/GHelper.sln --configuration Release --runtime win-x64 -p:PublishSingleFile=true --no-self-contained
 
-    - name: Upload unsigned EXE
-      id: upload-unsigned
-      uses: actions/upload-artifact@v4
-      with:
-        path: app/bin/x64/Release/net8.0-windows/win-x64/publish/GHelper.exe
+    - name: Create ZIP from EXE
+      run: powershell Compress-Archive ./app/bin/x64/Release/net8.0-windows/win-x64/publish/GHelper.exe ./GHelper.zip
 
-    - id: sign-exe
-      uses: signpath/github-action-submit-signing-request@v1.1
-      with:
-        api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-        organization-id: ${{ secrets.SIGNPATH_ORG_ID }}
-        project-slug: ${{ secrets.SIGNPATH_PROJECT }}
-        signing-policy-slug: ${{ secrets.SIGNPATH_POLICY }}
-        github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
-        wait-for-completion: true
-        output-artifact-directory: './signed'
-
-    - name: Create ZIP from signed EXE
-      run: powershell Compress-Archive ./signed/GHelper.exe ./signed/GHelper.zip
-
-    - name: Upload signed EXE and ZIP
+    - name: Upload to Release
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        gh release upload "${{ github.event.release.tag_name }}" ./signed/GHelper.exe ./signed/GHelper.zip --clobber
-    - name: Generate SLSA build provenance attestation
-      uses: actions/attest-build-provenance@v2
-      with:
-        subject-path: |
-          ./signed/GHelper.exe
-          ./signed/GHelper.zip
+        gh release upload "${{ github.event.release.tag_name }}" ./app/bin/x64/Release/net8.0-windows/win-x64/publish/GHelper.exe ./GHelper.zip --clobber
