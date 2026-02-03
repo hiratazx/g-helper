@@ -484,6 +484,9 @@ namespace GHelper
             checkKeystoneSound.Checked = Keystone.IsEnabled();
             checkKeystoneSound.CheckedChanged += CheckKeystoneSoundCheckedChanged;
 
+            checkForceGpuModes.Checked = AppConfig.Is("force_gpu_modes");
+            checkForceGpuModes.CheckedChanged += CheckForceGpuModes_CheckedChanged;
+
             toolTip.SetToolTip(checkAutoToggleClamshellMode, "Disable sleep on lid close when plugged in and external monitor is connected");
             toolTip.SetToolTip(checkNVPlatform, "Stops NVIDIA services when the discrete GPU is disabled\nand restarts them automatically when the GPU is enabled");
             toolTip.SetToolTip(checkAspm, "Prevents PCIe devices from entering low-power idle states.\nRecommended if you experience random hangs or unresponsive hardware.");
@@ -520,6 +523,12 @@ namespace GHelper
         private void CheckPerKeyRGB_CheckedChanged(object? sender, EventArgs e)
         {
             AppConfig.Set("per_key_rgb", (checkPerKeyRGB.Checked ? 1 : 0));
+        }
+
+        private void CheckForceGpuModes_CheckedChanged(object? sender, EventArgs e)
+        {
+            AppConfig.Set("force_gpu_modes", (checkForceGpuModes.Checked ? 1 : 0));
+            Program.settingsForm.gpuControl.InitGPUMode();
         }
 
         private void CheckLEDStatus_CheckedChanged(object? sender, EventArgs e)
