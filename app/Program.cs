@@ -71,31 +71,34 @@ namespace GHelper
                 return;
             }
 
-            settingsForm = new SettingsForm();
+            string language = AppConfig.GetString("language");
+            try
+            {
+                if (language != null && language.Length > 0)
+                    Thread.CurrentThread.CurrentUICulture = CultureInfo.GetCultureInfo(language);
+                else
+                {
+                    var culture = CultureInfo.CurrentUICulture;
+                    if (culture.ToString() == "kr") culture = CultureInfo.GetCultureInfo("ko");
+                    Thread.CurrentThread.CurrentUICulture = culture;
+                }
+            } catch
+            {
+                Logger.WriteLine("Unknown Language: " + language);
+            }
 
+            Logger.WriteLine("----------------------");
+            Logger.WriteLine("App launched: " + AppConfig.GetModel() + " :" + Assembly.GetExecutingAssembly().GetName().Version.ToString() + CultureInfo.CurrentUICulture + (ProcessHelper.IsUserAdministrator() ? "." : ""));
+
+            settingsForm = new SettingsForm();
             modeControl = new ModeControl();
             gpuControl = new GPUModeControl(settingsForm);
             allyControl = new AllyControl(settingsForm);
             clamshellControl = new ClamshellModeControl();
-
             toast = new ToastForm();
-
-            string language = AppConfig.GetString("language");
-
-            if (language != null && language.Length > 0)
-                Thread.CurrentThread.CurrentUICulture = CultureInfo.GetCultureInfo(language);
-            else
-            {
-                var culture = CultureInfo.CurrentUICulture;
-                if (culture.ToString() == "kr") culture = CultureInfo.GetCultureInfo("ko");
-                Thread.CurrentThread.CurrentUICulture = culture;
-            }
 
             ProcessHelper.CheckAlreadyRunning();
             ProcessHelper.SetPriority();
-
-            Logger.WriteLine("------------");
-            Logger.WriteLine("App launched: " + AppConfig.GetModel() + " :" + Assembly.GetExecutingAssembly().GetName().Version.ToString() + CultureInfo.CurrentUICulture + (ProcessHelper.IsUserAdministrator() ? "." : ""));
 
             CleanupLegacyFiles();
 
@@ -129,6 +132,10 @@ namespace GHelper
                 Icon = Properties.Resources.standard,
                 Visible = true
             };
+
+            var trayRetry = new System.Windows.Forms.Timer { Interval = 5000 };
+            trayRetry.Tick += (_, _) => { trayRetry.Dispose(); trayIcon.Visible = false; trayIcon.Visible = true; };
+            trayRetry.Start();
 
             WM_TASKBARCREATED = RegisterWindowMessage("TaskbarCreated");
             Logger.WriteLine($"Tray Icon: {trayIcon.Visible} | {WM_TASKBARCREATED}");
@@ -211,7 +218,6 @@ namespace GHelper
             });
 
             Application.Run();
-
         }
 
 

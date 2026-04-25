@@ -5,7 +5,6 @@ using GHelper.UI;
 using GHelper.USB;
 using PawnIO;
 using System.Diagnostics;
-using System.Management;
 using System.Windows.Forms.DataVisualization.Charting;
 
 namespace GHelper
@@ -176,6 +175,12 @@ namespace GHelper
             trackGPUTemp.MouseUp += TrackGPU_MouseUp;
             trackGPUPower.MouseUp += TrackGPU_MouseUp;
 
+            trackHysteresisUp.Scroll += TrackHysteresis_Scroll;
+            trackHysteresisDown.Scroll += TrackHysteresis_Scroll;
+
+            trackHysteresisUp.MouseUp += TrackHysteresis_MouseUp;
+            trackHysteresisDown.MouseUp += TrackHysteresis_MouseUp;
+
 
             //labelInfo.MaximumSize = new Size(280, 0);
             labelFansResult.Visible = false;
@@ -305,19 +310,8 @@ namespace GHelper
 
         public void InitCPU()
         {
-            Task.Run(async () =>
-            {
-                string CPUName;
-                using (ManagementObjectSearcher myProcessorObject = new ManagementObjectSearcher("select * from Win32_Processor"))
-                    foreach (ManagementObject obj in myProcessorObject.Get())
-                    {
-                        CPUName = obj["Name"].ToString();
-                        Invoke(delegate
-                        {
-                            Text = Properties.Strings.FansAndPower + " - " + CPUName;
-                        });
-                    }
-            });
+            string name = CpuInfo.Name;
+            if (name.Length > 0) Text = Properties.Strings.FansAndPower + " - " + name;
         }
 
         public void ToggleNavigation(int index = 0)
@@ -659,7 +653,7 @@ namespace GHelper
             labelGPUMemory.Text = $"{trackGPUMemory.Value} MHz";
 
             labelGPUBoost.Text = $"{trackGPUBoost.Value}W";
-            labelGPUTemp.Text = $"{trackGPUTemp.Value}°C";
+            labelGPUTemp.Text = $"{trackGPUTemp.Value}ï¿½C";
 
             if (trackGPUClockLimit.Value >= NvidiaGpuControl.MaxClockLimit)
                 labelGPUClockLimit.Text = "Default";
@@ -669,6 +663,49 @@ namespace GHelper
             labelGPUPower.Text = (gpuPowerBase + trackGPUPower.Value) + "W";
 
         }
+
+        private static readonly string[] HysteresisLabels = { "Very Low", "Low", "Medium", "High", "Very High" };
+
+        private void VisualiseHysteresis()
+        {
+            labelHysteresisUpValue.Text = HysteresisLabels[trackHysteresisUp.Value - 1];
+            labelHysteresisDownValue.Text = HysteresisLabels[trackHysteresisDown.Value - 1];
+        }
+
+        private void InitHysteresis()
+        {
+            var defaults = Program.acpi.GetFanHysteresis();
+            if (defaults.up < 0 || defaults.down < 0)
+            {
+                panelHysteresis.Visible = false;
+                return;
+            }
+
+            panelHysteresis.Visible = true;
+
+            int up = AppConfig.GetMode("hysteresis_up");
+            int down = AppConfig.GetMode("hysteresis_down");
+
+            if (up < 0) up = defaults.up > 0 ? defaults.up : 3;
+            if (down < 0) down = defaults.down > 0 ? defaults.down : 3;
+
+            trackHysteresisUp.Value = Math.Clamp(up, trackHysteresisUp.Minimum, trackHysteresisUp.Maximum);
+            trackHysteresisDown.Value = Math.Clamp(down, trackHysteresisDown.Minimum, trackHysteresisDown.Maximum);
+            VisualiseHysteresis();
+        }
+
+        private void TrackHysteresis_Scroll(object? sender, EventArgs e)
+        {
+            AppConfig.SetMode("hysteresis_up", trackHysteresisUp.Value);
+            AppConfig.SetMode("hysteresis_down", trackHysteresisDown.Value);
+            VisualiseHysteresis();
+        }
+
+        private void TrackHysteresis_MouseUp(object? sender, MouseEventArgs e)
+        {
+            Program.acpi.SetFanHysteresis(trackHysteresisUp.Value, trackHysteresisDown.Value);
+        }
+
 
         private void trackGPUClockLimit_Scroll(object? sender, EventArgs e)
         {
@@ -735,7 +772,7 @@ namespace GHelper
         {
 
             string title = "";
-            string scale = ", RPM/°C";
+            string scale = ", RPM/ï¿½C";
 
             switch (device)
             {
@@ -1021,7 +1058,7 @@ namespace GHelper
             int chartCount = 2;
 
             // Middle / system fan check
-            if (!AsusACPI.IsEmptyCurve(Program.acpi.GetFanCurve(AsusFan.Mid)) || Program.acpi.GetFan(AsusFan.Mid) >= 0)
+            if (!AsusACPI.IsEmptyCurve(Program.acpi.GetFanCurve(AsusFan.Mid)) || Program.acpi.IsMidFanSupported())
             {
                 AppConfig.Set("mid_fan", 1);
                 chartCount++;
@@ -1085,6 +1122,8 @@ namespace GHelper
                 seriesMid.Color = Color.Gray;
                 seriesXGM.Color = Color.Gray;
             }
+
+            InitHysteresis();
 
         }
 
@@ -1204,6 +1243,13 @@ namespace GHelper
                 modeControl.SetGPUPower();
             }
 
+            if (panelHysteresis.Visible)
+            {
+                AppConfig.RemoveMode("hysteresis_up");
+                AppConfig.RemoveMode("hysteresis_down");
+                InitHysteresis();
+            }
+
         }
 
         private void Chart_Save()
@@ -1249,13 +1295,33 @@ namespace GHelper
 
             bool tip = false;
 
-            HitTestResult hit = chart.HitTest(e.X, e.Y);
             Series series = chart.Series[0];
 
-            if (hit.Series is not null && hit.PointIndex >= 0)
+            if (!e.Button.HasFlag(MouseButtons.Left) || curPoint == null)
             {
-                curIndex = hit.PointIndex;
-                curPoint = hit.Series.Points[curIndex];
+                try
+                {
+                    HitTestResult hit = chart.HitTest(e.X, e.Y);
+                    if (hit.Series is not null && hit.PointIndex >= 0 && hit.PointIndex < hit.Series.Points.Count)
+                    {
+                        curIndex = hit.PointIndex;
+                        curPoint = hit.Series.Points[curIndex];
+                        tip = true;
+                    }
+                    else if (!e.Button.HasFlag(MouseButtons.Left))
+                    {
+                        curPoint = null;
+                        curIndex = -1;
+                    }
+                }
+                catch
+                {
+                    curPoint = null;
+                    curIndex = -1;
+                }
+            }
+            else
+            {
                 tip = true;
             }
 

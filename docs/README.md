@@ -6,7 +6,7 @@
 
 Small and lightweight Armoury Crate alternative for Asus laptops offering almost same functionality with a much smaller footprint. Works with all popular models, such as ROG Zephyrus G14, G15, G16, M16, Flow X13, Flow X16, Flow Z13, DUO, TUF Series, Strix or Scar Series, ProArt, Vivobook, Zenbook, Expertbook, ROG Ally or Ally X and many more! 
 
-# [:floppy_disk: Download](https://github.com/seerge/g-helper/releases/latest/download/GHelper.zip)
+# [:floppy_disk: Download](https://github.com/seerge/g-helper/releases/download/v0.247/GHelper.exe)
 **⭐ If you like the app - please spread the word about it online**
 
 <table>
@@ -181,6 +181,7 @@ Huge thanks to [@IceStormNG](https://github.com/IceStormNG) 👑 for contributio
 - [NvAPIWrapper](https://github.com/falahati/NvAPIWrapper) for accessing Nvidia API
 - [Starlight](https://github.com/vddCore/Starlight) for anime matrix communication protocol
 - [UXTU](https://github.com/JamesCJ60/Universal-x86-Tuning-Utility) for undervolting using Ryzen System Management Unit
+- [PawnIO](https://github.com/namazso/PawnIO) for access to RyzenSMU
 - [AsusCtl](https://gitlab.com/asus-linux/asusctl) for inspiration and some reverse engineering
 
 ### Code Signing Policy

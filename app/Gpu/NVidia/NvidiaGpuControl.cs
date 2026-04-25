@@ -5,6 +5,7 @@ using NvAPIWrapper.Native.GPU;
 using NvAPIWrapper.Native.GPU.Structures;
 using NvAPIWrapper.Native.Interfaces.GPU;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using static NvAPIWrapper.Native.GPU.Structures.PerformanceStates20InfoV1;
 
 namespace GHelper.Gpu.NVidia;
@@ -48,27 +49,109 @@ public class NvidiaGpuControl : IGpuControl
 
     public string FullName => _internalGpu!.FullName;
 
+    public int? _lastTemp;
+    public int _lastTempTime = 0;
+
+    private static bool verboseLog = false;
+
+    public bool IsAlive()
+    {
+        if (!IsValid) return false;
+        try
+        {
+            var perfState = GPUApi.GetCurrentPerformanceState(_internalGpu!.Handle);
+            if (verboseLog) Logger.WriteLine($"GPU: {perfState}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (verboseLog) Logger.WriteLine($"GPU: {ex.Message}");
+            return false; // (ex.Message == "NVAPI_GPU_NOT_POWERED");
+        }
+    }
+
+    public int? ReadCurrentTemperature(bool log = false)
+    {
+        if (!IsValid) return null;
+
+        IThermalSensor? gpuSensor =
+            GPUApi.GetThermalSettings(_internalGpu!.Handle).Sensors
+            .FirstOrDefault(s => s.Target == ThermalSettingsTarget.GPU);
+
+        if (log || verboseLog) Logger.WriteLine($"GPU Temp: {gpuSensor?.CurrentTemperature}C");
+        return gpuSensor?.CurrentTemperature;
+    }
+
+    private Task<int?>? _readTask;
+
     public int? GetCurrentTemperature()
     {
         if (!IsValid) return null;
 
-        PhysicalGPU internalGpu = _internalGpu!;
-        IThermalSensor? gpuSensor =
-            GPUApi.GetThermalSettings(internalGpu.Handle).Sensors
-            .FirstOrDefault(s => s.Target == ThermalSettingsTarget.GPU);
+        if ((_readTask?.IsCompleted ?? true) && (IsAlive() || ShouldRefresh()))
+        {
+            _readTask = Task.Run(() =>
+            {
+                var temp = ReadCurrentTemperature(true);
+                if (temp is not null)
+                {
+                    _lastTemp = temp;
+                    _lastTempTime = Environment.TickCount;
+                }
+                return temp;
+            });
+        }
 
-        return gpuSensor?.CurrentTemperature;
+        _readTask?.Wait(500);
+
+        return _lastTemp;
+    }
+
+    private bool ShouldRefresh()
+    {
+        const int minInterval = 5_000;
+        const int maxInterval = 120_000;
+        const float deltaMin = 5f;
+        const float deltaMax = 20f;
+
+        if (_lastTemp is null) return true;
+
+        var cpuTemp = (float)HardwareControl.GetCPUTemp();
+        var delta = _lastTemp.Value - cpuTemp;
+
+        if (delta < deltaMin) return false;
+
+        var t = Math.Clamp((delta - deltaMin) / (deltaMax - deltaMin), 0f, 1f);
+        var interval = (int)(maxInterval - t * (maxInterval - minInterval));
+
+        var refresh = Environment.TickCount > _lastTempTime + interval;
+        if (verboseLog) Logger.WriteLine($"GPU Temp Refresh Interval: {interval}ms {refresh}");
+
+        return refresh;
     }
 
     public void Dispose()
     {
     }
 
+    private static readonly HashSet<string> _systemProcessNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "dwm", "csrss", "winlogon", "services", "lsass", "smss", "wininit",
+        "svchost", "fontdrvhost", "igfxem", "igfxhk", "igfxext",
+        "nvcontainer", "nvdisplay.container", "nvsettings", "nvspcaps64",
+        "nvsphelper64", "nvwmi64", "nvcplui", "atieclxx", "atiesrxx",
+        "explorer", "taskhostw", "sihost", "runtimebroker", "shellexperiencehost",
+        "searchhost", "startmenuexperiencehost", "textinputhost",
+        "applicationframehost", "systemsettings", "dllhost", "conhost",
+        "audiodg", "ctfloader", "spoolsv", "wlanext", "msdtc",
+    };
+
     public void KillGPUApps()
     {
-
         if (!IsValid) return;
         PhysicalGPU internalGpu = _internalGpu!;
+
+        int currentPid = Process.GetCurrentProcess().Id;
 
         try
         {
@@ -76,6 +159,10 @@ public class NvidiaGpuControl : IGpuControl
             foreach (Process process in processes)
                 try
                 {
+                    if (process.Id == currentPid) continue;
+                    if (process.SessionId == 0) continue;
+                    if (_systemProcessNames.Contains(process.ProcessName)) continue;
+
                     Logger.WriteLine("Kill:" + process.ProcessName);
                     ProcessHelper.KillByProcess(process);
                 }
@@ -102,6 +189,8 @@ public class NvidiaGpuControl : IGpuControl
 
         try
         {
+            var temp = ReadCurrentTemperature(true); // Force wake up GPU for clock reading
+
             IPerformanceStates20Info states = GPUApi.GetPerformanceStates20(internalGpu.Handle);
             core = states.Clocks[PerformanceStateId.P0_3DPerformance][0].FrequencyDeltaInkHz.DeltaValue / 1000;
             memory = states.Clocks[PerformanceStateId.P0_3DPerformance][1].FrequencyDeltaInkHz.DeltaValue / 1000;
@@ -182,10 +271,28 @@ public class NvidiaGpuControl : IGpuControl
 
     }
 
-    public static void RestartNVService()
+    public static bool IsContainerRestartNeeded()
+    {
+        var logPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            @"NVIDIA Corporation\NVIDIA App\NvContainer\NvContainerLocalSystem.log"
+        );
+
+        using var fs = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        fs.Seek(-Math.Min(8192, fs.Length), SeekOrigin.End);
+        var tail = new StreamReader(fs).ReadToEnd();
+
+        var match = Regex.Match(tail,
+            @"NvcPluginLoadStats for 'NvPluginWatchdog'.*?InitializeProcTime = (\d+) us",
+            RegexOptions.Singleline);
+
+        return match.Success && match.Groups[1].Value == "0";
+    }
+
+    public static void RestartNVService(bool light = false)
     {
         if (!ProcessHelper.IsUserAdministrator()) return;
-        RunPowershellCommand(@"Restart-Service -Name 'NVDisplay.ContainerLocalSystem' -Force");
+        if (!light) RunPowershellCommand(@"Restart-Service -Name 'NVDisplay.ContainerLocalSystem' -Force");
         RunPowershellCommand(@"Restart-Service -Name 'NvContainerLocalSystem' -Force");
     }
 
